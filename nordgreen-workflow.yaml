@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: nordgreen-workflow-
+spec:
+  entrypoint: nordgreen-workflow
+  imagePullSecrets:
+    - name: dockerhub-info
+  templates:
+  - name: nordgreen-workflow
+    steps:
+    - - name: download
+        template: shopify-downloader
+    - - name: estimate
+        template: estimate-model
+
+  - name: shopify-downloader
+    inputs:
+      artifacts:
+      - name: order-data
+        path: /project/downloads
+        s3:
+          endpoint: storage.googleapis.com
+          bucket: nova_sku_bucket
+          key: order_data/orders.tgz
+          accessKeySecret:
+            name: my-gcs-access
+            key: accessKey
+          secretKeySecret:
+            name: my-gcs-secret
+            key: secretKey                    
+    container:
+      image: novalyticsahmad/shopify-downloader:latest
+      command: [sh, -c]
+      #python order_handler.py
+      args: ["ls"]
+    outputs:
+      artifacts:
+        - name: downloaddata
+          path: /project/downloads
+          s3:
+            endpoint: storage.googleapis.com
+            bucket: nova_sku_bucket
+            # NOTE: by default, output artifacts are automatically tarred and gzipped before saving.
+            # As a best practice, .tgz or .tar.gz should be suffixed into the key name so the
+            # resulting object has an accurate file extension and mime-type. If archive is set to
+            # 'none', then preserve the appropriate file extension for the key name
+            key: order_data/orders.tgz
+            
+            # serviceAccountKeySecret is a secret selector.
+            # It references the k8s secret named 'my-gcs-credentials'.
+            # This secret is expected to have have the key 'serviceAccountKey',
+            # containing the base64 encoded Google Cloud Service Account Key (json)
+            # to the bucket.
+            #
+            # If it's running on GKE, and Workload Identity is used,
+            # serviceAccountKeySecret is not needed.
+            accessKeySecret:
+              name: my-gcs-access
+              key: accessKey
+            secretKeySecret:
+              name: my-gcs-secret
+              key: secretKey
+
+  - name: estimate-model
+    inputs:
+      artifacts:
+      - name: order-data
+        path: /project/downloads
+        s3:
+          endpoint: storage.googleapis.com
+          bucket: nova_sku_bucket
+          key: order_data/orders.tgz
+          accessKeySecret:
+            name: my-gcs-access
+            key: accessKey
+          secretKeySecret:
+            name: my-gcs-secret
+            key: secretKey                    
+    container:
+      image: novalyticsahmad/nordgreen-model:latest
+      command: [sh, -c]
+      args: ["python Main_script.py"]
